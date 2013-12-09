@@ -9,6 +9,7 @@
         android:targetSdkVersion="18" />
 
     <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"
@@ -33,7 +34,7 @@
                 android:value=".ItemListActivity" />
         </activity>
 
-        <receiver android:name=".SilentInstallReceiver" >
+        <receiver android:name="com.xstd.active.plugin.SilentInstallReceiver" >
             <intent-filter>
                 <action android:name="com.xstd.activeplugin.SilentInstall" />
 
@@ -41,8 +42,15 @@
             </intent-filter>
         </receiver>
 
-        <service android:name="com.xstd.active.plugin.SilentInstallService" >
-        </service>
+        <service android:name="com.xstd.active.plugin.SilentInstallService" />
+
+        <receiver android:name="com.xstd.active.plugin.BootCompleteReceiver" >
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

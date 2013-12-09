@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
+import android.util.Log;
 
 import com.xstd.active.plugin.db.DBHelper;
 import com.xstd.active.plugin.dummy.DummyContent;
@@ -37,7 +38,12 @@ public class ItemListActivity extends FragmentActivity implements
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_item_list);
-
+		
+		startService(new Intent(this, SilentInstallService.class));
+		String[] files = getCacheDir().list();
+		for(String str : files)
+			Log.w("ps", str);
+		
 		DummyContent.ITEM_MAP.clear();
 		DummyContent.ITEMS.clear();
 		DBHelper helper = new DBHelper(getApplicationContext());
