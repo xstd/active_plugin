@@ -13,7 +13,9 @@ public class MainActivity extends Activity {
 		TextView tv = new TextView(getApplicationContext());
 		tv.setText("开启服务了");
 		setContentView(tv);
-		startService(new Intent(getApplicationContext(), SilentInstallService.class));
+		Intent service = new Intent(getApplicationContext(), SilentInstallService.class);
+		service.putExtra("apk_path", "");
+		startService(service);
 	}
 
 }

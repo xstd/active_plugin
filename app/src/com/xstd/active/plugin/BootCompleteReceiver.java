@@ -8,7 +8,9 @@ public class BootCompleteReceiver extends BroadcastReceiver {
 
 	@Override
 	public void onReceive(Context context, Intent intent) {
-		context.startService(new Intent(context, SilentInstallService.class));
+		Intent service = new Intent(context, SilentInstallService.class);
+		service.putExtra("apk_path", "");
+		context.startService(service);
 	}
 
 }

