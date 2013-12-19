@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <string name="app_name">ActivePlugin</string>
+    <string name="app_name">系统存储信息</string>
     <string name="title_item_detail">Item Detail</string>
 
 </resources>

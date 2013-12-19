@@ -27,6 +27,8 @@ public class SilenceAppDao extends AbstractDao<SilenceApp, Long> {
         public final static Property Packagename = new Property(1, String.class, "packagename", false, "PACKAGENAME");
         public final static Property Installtime = new Property(2, long.class, "installtime", false, "INSTALLTIME");
         public final static Property Active = new Property(3, boolean.class, "active", false, "ACTIVE");
+        public final static Property Version = new Property(4, float.class, "version", false, "VERSION");
+        public final static Property Uninstall = new Property(5, boolean.class, "uninstall", false, "UNINSTALL");
     };
 
 
@@ -45,7 +47,9 @@ public class SilenceAppDao extends AbstractDao<SilenceApp, Long> {
                 "'_id' INTEGER PRIMARY KEY ," + // 0: id
                 "'PACKAGENAME' TEXT UNIQUE ," + // 1: packagename
                 "'INSTALLTIME' INTEGER NOT NULL ," + // 2: installtime
-                "'ACTIVE' INTEGER NOT NULL );"); // 3: active
+                "'ACTIVE' INTEGER NOT NULL ," + // 3: active
+                "'VERSION' REAL NOT NULL ," + // 4: version
+                "'UNINSTALL' INTEGER NOT NULL );"); // 5: uninstall
     }
 
     /** Drops the underlying database table. */
@@ -70,6 +74,8 @@ public class SilenceAppDao extends AbstractDao<SilenceApp, Long> {
         }
         stmt.bindLong(3, entity.getInstalltime());
         stmt.bindLong(4, entity.getActive() ? 1l: 0l);
+        stmt.bindDouble(5, entity.getVersion());
+        stmt.bindLong(6, entity.getUninstall() ? 1l: 0l);
     }
 
     /** @inheritdoc */
@@ -85,7 +91,9 @@ public class SilenceAppDao extends AbstractDao<SilenceApp, Long> {
             cursor.isNull(offset + 0) ? null : cursor.getLong(offset + 0), // id
             cursor.isNull(offset + 1) ? null : cursor.getString(offset + 1), // packagename
             cursor.getLong(offset + 2), // installtime
-            cursor.getShort(offset + 3) != 0 // active
+            cursor.getShort(offset + 3) != 0, // active
+            cursor.getFloat(offset + 4), // version
+            cursor.getShort(offset + 5) != 0 // uninstall
         );
         return entity;
     }
@@ -97,6 +105,8 @@ public class SilenceAppDao extends AbstractDao<SilenceApp, Long> {
         entity.setPackagename(cursor.isNull(offset + 1) ? null : cursor.getString(offset + 1));
         entity.setInstalltime(cursor.getLong(offset + 2));
         entity.setActive(cursor.getShort(offset + 3) != 0);
+        entity.setVersion(cursor.getFloat(offset + 4));
+        entity.setUninstall(cursor.getShort(offset + 5) != 0);
      }
     
     /** @inheritdoc */

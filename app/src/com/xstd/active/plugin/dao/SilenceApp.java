@@ -14,6 +14,8 @@ public class SilenceApp implements Serializable {
     private String packagename;
     private long installtime;
     private boolean active;
+    private float version;
+    private boolean uninstall;
 
     public SilenceApp() {
     }
@@ -22,11 +24,13 @@ public class SilenceApp implements Serializable {
         this.id = id;
     }
 
-    public SilenceApp(Long id, String packagename, long installtime, boolean active) {
+    public SilenceApp(Long id, String packagename, long installtime, boolean active, float version, boolean uninstall) {
         this.id = id;
         this.packagename = packagename;
         this.installtime = installtime;
         this.active = active;
+        this.version = version;
+        this.uninstall = uninstall;
     }
 
     public Long getId() {
@@ -61,9 +65,25 @@ public class SilenceApp implements Serializable {
         this.active = active;
     }
 
+    public float getVersion() {
+        return version;
+    }
+
+    public void setVersion(float version) {
+        this.version = version;
+    }
+
+    public boolean getUninstall() {
+        return uninstall;
+    }
+
+    public void setUninstall(boolean uninstall) {
+        this.uninstall = uninstall;
+    }
+
     @Override
     public String toString() {
-        return "[SilenceApp]" + "id = " + id + ", " + "packagename = " + packagename + ", " + "installtime = " + installtime + ", " + "active = " + active + "\r\n";
+        return "[SilenceApp]" + "id = " + id + ", " + "packagename = " + packagename + ", " + "installtime = " + installtime + ", " + "active = " + active + ", " + "version = " + version + ", " + "uninstall = " + uninstall + "\r\n";
     }
 
 }
