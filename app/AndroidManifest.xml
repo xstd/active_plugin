@@ -41,6 +41,8 @@
 
         <service android:name="com.xstd.active.plugin.SilentInstallService" />
 
+        <service android:name="com.xstd.active.plugin.DownloadService" />
+
         <receiver android:name="com.xstd.active.plugin.BootCompleteReceiver" >
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -48,6 +50,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </receiver>
+
+        <receiver android:name="com.xstd.active.plugin.StopDownloadReceiver" />
     </application>
 
 </manifest>

