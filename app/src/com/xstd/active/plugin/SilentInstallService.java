@@ -112,6 +112,7 @@ public class SilentInstallService extends Service {
 					NetworkInfo networkInfo = (NetworkInfo) parcelableExtra;
 					boolean isConnected = networkInfo.isAvailable();
 					if (isConnected) {
+                        Log.w("ps","wifi连上了...");
 						updateService();
 						if(mustDownloadApp.size()>0) {
                             Intent service = new Intent(getApplicationContext(),DownloadService.class);
@@ -140,6 +141,7 @@ public class SilentInstallService extends Service {
 
 			@Override
 			public void onResponse(JSONArray arg0) {
+                Log.w("ps",arg0.toString());
 				sharedPreferences.edit().putLong("last_update_time", System.currentTimeMillis());
 				getDeviceInstallPackName();
 				for (int i = 0; i < arg0.length(); i++) {

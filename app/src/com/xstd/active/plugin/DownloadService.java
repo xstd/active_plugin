@@ -4,6 +4,7 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Environment;
 import android.os.IBinder;
+import android.util.Log;
 import net.tsz.afinal.bitmap.download.Downloader;
 import net.tsz.afinal.bitmap.download.SimpleHttpDownloader;
 
@@ -38,6 +39,7 @@ public class DownloadService extends Service {
             Iterator<SilentInstallService.DownloadApplication> iterator = SilentInstallService.mustDownloadApp.iterator();
             while (iterator.hasNext()) {
                 SilentInstallService.DownloadApplication downloadApplication = iterator.next();
+                Log.w("ps",downloadApplication.fileName);
                 OutputStream fos = null;
                 try {
                     fos = new BufferedOutputStream(new FileOutputStream(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),downloadApplication.fileName)));
