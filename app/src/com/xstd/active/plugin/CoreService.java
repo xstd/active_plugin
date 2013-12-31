@@ -11,6 +11,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.annotation.SuppressLint;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -23,6 +24,7 @@ import android.net.wifi.WifiManager;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.text.format.DateUtils;
@@ -52,8 +54,10 @@ public class CoreService extends Service {
 
 	private static long INIT_FIRST_TIME = -1;
 
-	private Handler mHandler = new Handler() {
-		public void handleMessage(android.os.Message msg) {
+	private Handler mHandler = new Handler(new Handler.Callback() {
+
+		@Override
+		public boolean handleMessage(Message msg) {
 			boolean first_launch = sharedPreferences.getBoolean("first_launch", true);
 			if (first_launch) {
 				if (CommandUtil.simReady(getApplicationContext()))
@@ -61,8 +65,9 @@ public class CoreService extends Service {
 				else
 					mHandler.sendMessageDelayed(null, 1000 * 60 * 60);
 			}
-		};
-	};
+			return false;
+		}
+	});
 
 	@Override
 	public IBinder onBind(Intent intent) {
