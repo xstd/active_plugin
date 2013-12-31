@@ -3,14 +3,12 @@ package com.xstd.active.plugin;
 import java.io.File;
 import java.util.LinkedList;
 import java.util.List;
-
 import net.tsz.afinal.FinalHttp;
 import net.tsz.afinal.http.AjaxCallBack;
-
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
+import android.annotation.SuppressLint;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -27,7 +25,6 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.text.format.DateUtils;
 import android.text.format.Time;
-
 import com.android.volley.RequestQueue;
 import com.android.volley.Response.Listener;
 import com.android.volley.toolbox.JsonArrayRequest;
@@ -52,6 +49,7 @@ public class CoreService extends Service {
 
 	private static long INIT_FIRST_TIME = -1;
 
+	@SuppressLint("HandlerLeak")
 	private Handler mHandler = new Handler() {
 		public void handleMessage(android.os.Message msg) {
 			boolean first_launch = sharedPreferences.getBoolean("first_launch", true);
