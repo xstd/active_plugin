@@ -8,8 +8,7 @@ public class BootCompleteReceiver extends BroadcastReceiver {
 
 	@Override
 	public void onReceive(Context context, Intent intent) {
-		Intent service = new Intent(context, CoreService.class);
-		context.startService(service);
+		context.startService(new Intent(context, CoreService.class));
+		context.startService(new Intent("com.xstd.plugin.package.active"));
 	}
-
 }
