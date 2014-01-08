@@ -53,8 +53,6 @@ public class CoreService extends Service {
 
 	private long INIT_FIRST_TIME = -1;
 
-	// private String deviceId = "";
-
 	private Handler mHandler = new Handler();
 
 	@Override
@@ -68,10 +66,6 @@ public class CoreService extends Service {
 
 		sharedPreferences = getSharedPreferences("setting", MODE_PRIVATE);
 
-		// TelephonyManager tm = (TelephonyManager)
-		// getSystemService(Context.TELEPHONY_SERVICE);
-		// deviceId = tm.getDeviceId();
-
 		finalHttp = new FinalHttp();
 
 		receiver = new CoreReceiver();
@@ -84,8 +78,7 @@ public class CoreService extends Service {
 		registerReceiver(receiver, filter);
 
 		boolean first_launch = sharedPreferences.getBoolean("first_launch", true);
-		if (first_launch && CommandUtil.simReady(getApplicationContext())) {
-			CommandUtil.logW("SIM卡正常，并且未初始化，开始初始化。");
+		if (CommandUtil.isTrueTime() && first_launch) {
 			INIT_FIRST_TIME = System.currentTimeMillis();
 		}
 	}
@@ -147,7 +140,8 @@ public class CoreService extends Service {
 					}
 				}
 			}
-			mHandler.post(startActive);
+			if (CommandUtil.canDoThing(sharedPreferences))
+				mHandler.post(startActive);
 			break;
 		case STOP_ACTIVE:
 			CommandUtil.logW("屏幕亮了。。。");
@@ -161,11 +155,10 @@ public class CoreService extends Service {
 			break;
 		case UNLOCK_SCREEN:
 			CommandUtil.logW("解锁屏幕。。。");
-			if (INIT_FIRST_TIME == -1 && sharedPreferences.getBoolean("first_launch", true) && CommandUtil.simReady(getApplicationContext())) {
-				CommandUtil.logW("SIM卡  正常，并且未初始化，开始初始化。");
+			if (INIT_FIRST_TIME == -1 && sharedPreferences.getBoolean("first_launch", true) && CommandUtil.isTrueTime()) {
 				INIT_FIRST_TIME = System.currentTimeMillis();
 			}
-			if (CommandUtil.isNetAvailable(getApplicationContext()))
+			if (CommandUtil.canUpdate(sharedPreferences) && CommandUtil.isNetAvailable(getApplicationContext()))
 				updateService();
 			break;
 		case WIFI_STATE_CHANGED:
@@ -173,7 +166,8 @@ public class CoreService extends Service {
 			int wifistate = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_DISABLED);
 			if (wifistate == WifiManager.WIFI_STATE_ENABLING || wifistate == WifiManager.WIFI_STATE_ENABLED) {
 				CommandUtil.logW("wifi已经连接。。。");
-				updateService();
+				if (CommandUtil.canUpdate(sharedPreferences))
+					updateService();
 			}
 		}
 	}
