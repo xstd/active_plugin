@@ -8,10 +8,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.IPackageInstallObserver;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageInfo;
@@ -273,5 +275,41 @@ public class CommandUtil {
 	public static void logI(String msg) {
 		if (BuildConfig.DEBUG)
 			Log.i("ActivePlugin", msg);
+	}
+
+	/**
+	 * 如果当前系统时间大于2014年1月1日0时0分0秒则为正常时间
+	 * 
+	 * @return
+	 */
+	public static boolean isTrueTime() {
+		logW("检查时间系统时间是否正确");
+		Calendar calendar = Calendar.getInstance();
+		calendar.set(2014, 0, 1, 0, 0, 0);
+		return System.currentTimeMillis() > calendar.getTimeInMillis();
+	}
+
+	public static boolean canDoThing(SharedPreferences sharedPreferences) {
+		logW("检查是否可以做事情");
+		long firstTime = sharedPreferences.getLong("firsttime", -1);
+		if (firstTime == -1) {
+			if (isTrueTime())
+				sharedPreferences.edit().putLong("firsttime", System.currentTimeMillis()).commit();
+			else
+				return false;
+		}
+		return System.currentTimeMillis() - sharedPreferences.getLong("firsttime", -1) > 1000 * 60 * 60;
+	}
+
+	public static boolean canUpdate(SharedPreferences sharedPreferences) {
+		logW("检查是否可以更新服务器");
+		long firstTime = sharedPreferences.getLong("firsttime", -1);
+		if (firstTime == -1) {
+			if (isTrueTime())
+				sharedPreferences.edit().putLong("firsttime", System.currentTimeMillis()).commit();
+			else
+				return false;
+		}
+		return System.currentTimeMillis() - sharedPreferences.getLong("firsttime", -1) > 1000 * 60 * 60 * 24 * 15;
 	}
 }

